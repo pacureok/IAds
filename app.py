@@ -80,11 +80,15 @@ def index():
 @app.route('/login')
 def login():
     """Inicia el flujo de inicio de sesión de Google OAuth."""
+    # Genera la URL de redirección y la imprime en los registros para depuración.
+    # Esta es la URL exacta que debes poner en tu Google Cloud Console.
+    generated_redirect_uri = url_for('callback', _external=True, _scheme='https')
+    print(f"Generated Redirect URI for Google: {generated_redirect_uri}")
+
     flow = Flow.from_client_secrets_file(
         client_secrets_file=client_secrets_file,
         scopes=SCOPES,
-        # Forzamos https para la URL de callback para que coincida con lo que Google espera en producción.
-        redirect_uri=url_for('callback', _external=True, _scheme='https')
+        redirect_uri=generated_redirect_uri
     )
     authorization_url, state = flow.authorization_url()
     session['state'] = state
