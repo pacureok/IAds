@@ -1,12 +1,45 @@
+
 services:
+  # Frontend Service (Static Site)
   - type: static
-    name: gemini-midi-composer
+    name: gemini-midi-composer-frontend
     env: node
     plan: free
+    repo: https://github.com/tu_usuario/tu_repositorio # IMPORTANT: Replace with your repo URL
     buildCommand: "npm install && npm run build"
     publishDirectory: "dist"
     envVars:
-      - key: API_KEY # Your Gemini API Key
-        sync: false
       - key: VITE_GOOGLE_CLIENT_ID # Your Google Client ID
+        fromService:
+          type: web
+          name: gemini-midi-composer-backend
+          envVarKey: GOOGLE_CLIENT_ID
+    rewrites:
+      - source: /login
+        destination: https://gemini-midi-composer-backend.onrender.com/login
+      - source: /logout
+        destination: https://gemini-midi-composer-backend.onrender.com/logout
+      - source: /authorize
+        destination: https://gemini-midi-composer-backend.onrender.com/authorize
+      - source: /api/:path*
+        destination: https://gemini-midi-composer-backend.onrender.com/api/:path*
+
+  # Backend Service (Web Service)
+  - type: web
+    name: gemini-midi-composer-backend
+    env: python
+    plan: free
+    repo: https://github.com/tu_usuario/tu_repositorio # IMPORTANT: Replace with your repo URL
+    buildCommand: "pip install -r backend/requirements.txt"
+    startCommand: "gunicorn backend.app:app"
+    envVars:
+      - key: GEMINI_API_KEY
         sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: SECRET_KEY # A random string for session security
+        generateValue: true # Render can generate a secure random value for you
+      - key: FRONTEND_URL
+        value: https://gemini-midi-composer-frontend.onrender.com
