@@ -54,7 +54,11 @@ export async function generateMusicComposition(prompt: string): Promise<MidiData
       },
     });
 
-    const jsonString = response.text.trim();
+    const text = response.text;
+    if (!text) {
+      throw new Error("The AI model returned an empty response.");
+    }
+    const jsonString = text.trim();
     const parsedJson = JSON.parse(jsonString);
 
     // Post-process pitches: Convert stringified arrays into actual arrays
