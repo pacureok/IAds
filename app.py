@@ -6,32 +6,31 @@ import google.generativeai as genai
 import requests
 
 # --- Inicialización de la Aplicación ---
-# Inicializa la aplicación Flask
+# Inicializa la aplicación Flask.
 # template_folder='.' le dice a Flask que busque index.html en el directorio raíz.
 # static_folder='.' le dice a Flask que sirva archivos estáticos (como script.js, style.css) desde la raíz.
 app = Flask(__name__, static_folder='.', static_url_path='', template_folder='.')
-# La SECRET_KEY se carga desde las variables de entorno.
-# Es crucial para la seguridad de las sesiones de usuario.
+# La SECRET_KEY se carga desde las variables de entorno. Es crucial para la seguridad de las sesiones.
 app.secret_key = os.environ.get("SECRET_KEY")
 
 # --- Configuración de Google OAuth2 ---
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET")
-# La URL externa de tu aplicación en Render.com
+# La URL externa de tu aplicación en Render.com.
 RENDER_EXTERNAL_URL = os.environ.get('RENDER_EXTERNAL_URL')
 
 # Crea dinámicamente el archivo client_secret.json que necesita la librería de Google OAuth.
 # Esto evita tener que subir un archivo de secretos a tu repositorio.
 client_secrets_file = 'client_secret.json'
 
-# Construye la URI de redirección dependiendo de si la app corre en Render o localmente.
+# Construye la URI de redirección. Si se ejecuta en Render, usa la URL externa; si no, usa localhost.
 redirect_uri = f"{RENDER_EXTERNAL_URL}/callback" if RENDER_EXTERNAL_URL else "http://127.0.0.1:5000/callback"
 
 # Crea la estructura JSON para el archivo de secretos del cliente.
 client_config = {
     "web": {
         "client_id": GOOGLE_CLIENT_ID,
-        "project_id": "pacure-ai", # Nombre del proyecto actualizado
+        "project_id": "pacure-ai",
         "auth_uri": "https://accounts.google.com/o/oauth2/auth",
         "token_uri": "https://oauth2.googleapis.com/token",
         "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
@@ -48,7 +47,6 @@ SCOPES = ['openid', 'https://www.googleapis.com/auth/userinfo.email', 'https://w
 # --- Configuración de la API de Gemini ---
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 if not GEMINI_API_KEY:
-    # Imprime una advertencia si la clave no está configurada, en lugar de detener la app.
     print("ADVERTENCIA: No se ha configurado la GEMINI_API_KEY. La API de composición fallará.")
 else:
     genai.configure(api_key=GEMINI_API_KEY)
@@ -82,24 +80,19 @@ def index():
 @app.route('/login')
 def login():
     """Inicia el flujo de inicio de sesión de Google OAuth."""
-    if not app.secret_key:
-        return "Error del servidor: La SECRET_KEY no está configurada.", 500
-        
     flow = Flow.from_client_secrets_file(
         client_secrets_file=client_secrets_file,
         scopes=SCOPES,
-        redirect_uri=url_for('callback', _external=True)
+        # Forzamos https para la URL de callback para que coincida con lo que Google espera en producción.
+        redirect_uri=url_for('callback', _external=True, _scheme='https')
     )
-    # Genera un token de estado para prevenir ataques CSRF.
     authorization_url, state = flow.authorization_url()
-    # Guarda el estado en la sesión para verificarlo en el callback.
     session['state'] = state
     return redirect(authorization_url)
 
 @app.route('/callback')
 def callback():
     """Maneja la redirección de Google después de la autenticación."""
-    # Verifica el token de estado para asegurar que la solicitud es legítima.
     state = session.get('state')
     if not state or state != request.args.get('state'):
         return "Error: Parámetro de estado inválido. ¿Posible ataque CSRF?", 400
@@ -108,20 +101,17 @@ def callback():
         client_secrets_file=client_secrets_file,
         scopes=SCOPES,
         state=state,
-        redirect_uri=url_for('callback', _external=True)
+        redirect_uri=url_for('callback', _external=True, _scheme='https')
     )
     
-    # Intercambia el código de autorización por un token de acceso.
     flow.fetch_token(authorization_response=request.url)
     credentials = flow.credentials
     
-    # Usa el token de acceso para obtener la información del perfil del usuario.
     userinfo_response = requests.get(
         'https://www.googleapis.com/oauth2/v1/userinfo',
         headers={'Authorization': f'Bearer {credentials.token}'}
     )
     user_info = userinfo_response.json()
-    # Guarda la información del usuario en la sesión para mantenerlo conectado.
     session['user'] = user_info
     
     return redirect(url_for('index'))
@@ -148,7 +138,7 @@ def api_compose():
     if 'user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
         
-    if not GEMINI_API_KEY:
+    if not genai.API_KEY:
         return jsonify({'error': 'La API de Gemini no está configurada en el servidor.'}), 500
     
     data = request.get_json()
@@ -159,11 +149,8 @@ def api_compose():
 
     try:
         response = model.generate_content(prompt)
-        # La API de Gemini devuelve una cadena JSON, así que la devolvemos directamente
-        # con la cabecera de tipo de contenido correcta.
         return response.text, 200, {'Content-Type': 'application/json'}
     except Exception as e:
-        # Registra el error para depuración en el servidor.
         print(f"Error al llamar a la API de Gemini: {e}")
         return jsonify({'error': 'No se pudo generar la composición desde la IA.'}), 500
 
