@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Message, MessageRole, UserProfile } from './types';
 import ChatInput from './components/ChatInput';
 import ChatMessage from './components/ChatMessage';
