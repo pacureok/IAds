@@ -1,8 +1,6 @@
-
 import React from 'react';
 import { Message, MessageRole } from '../types';
 import { generateAndDownloadMidi } from '../services/midiService';
-import { MusicIcon } from './icons/MusicIcon';
 import { DownloadIcon } from './icons/DownloadIcon';
 
 interface ChatMessageProps {
@@ -14,10 +12,8 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLoading }) => {
   if (isLoading) {
     return (
       <div className="flex items-start space-x-4 max-w-3xl mx-auto">
-        <div className="flex-shrink-0 w-10 h-10 rounded-full bg-gradient-to-br from-purple-600 to-blue-600 flex items-center justify-center">
-            <div className="w-6 h-6 text-white">
-                <MusicIcon />
-            </div>
+        <div className="flex-shrink-0 w-10 h-10 rounded-full bg-gray-700 flex items-center justify-center p-2">
+            <img src="/imagres.ico" alt="Assistant" className="w-full h-full" />
         </div>
         <div className="flex items-center space-x-2 p-4 bg-gray-800 rounded-xl">
             <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{animationDelay: '0s'}}></div>
@@ -41,10 +37,8 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLoading }) => {
   return (
     <div className={`flex items-start space-x-4 max-w-3xl mx-auto ${isUser ? 'flex-row-reverse' : ''}`}>
       {!isUser && (
-        <div className="flex-shrink-0 w-10 h-10 rounded-full bg-gradient-to-br from-purple-600 to-blue-600 flex items-center justify-center">
-          <div className="w-6 h-6 text-white">
-              <MusicIcon />
-          </div>
+        <div className="flex-shrink-0 w-10 h-10 rounded-full bg-gray-700 flex items-center justify-center p-2">
+          <img src="/imagres.ico" alt="Assistant" className="w-full h-full" />
         </div>
       )}
       <div
