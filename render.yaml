@@ -1,0 +1,12 @@
+services:
+  - type: static
+    name: gemini-midi-composer
+    env: node
+    plan: free
+    buildCommand: "npm install && npm run build"
+    publishDirectory: "dist"
+    envVars:
+      - key: API_KEY # Your Gemini API Key
+        sync: false
+      - key: VITE_GOOGLE_CLIENT_ID # Your Google Client ID
+        sync: false
