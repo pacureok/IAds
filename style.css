@@ -7,7 +7,6 @@
     --color-text-secondary: #c4c7c5;
     --color-text-tertiary: #9aa0a6;
     --color-text-placeholder: #7f8183;
-    --color-user-message: #323652;
     --color-user-message-text: #d8e2ff;
     --color-accent-blue: #8ab4f8;
     --color-accent-purple: #c58af9;
@@ -111,7 +110,7 @@ body, html {
 }
 .welcome-screen {
     display: flex; flex-direction: column; justify-content: center;
-    height: 100%; text-align: center;
+    height: 100%; text-align: center; padding: 1rem;
 }
 .welcome-title {
     font-family: var(--font-primary); font-size: 3.5rem; font-weight: 500;
@@ -122,7 +121,7 @@ body, html {
 
 /* --- Messages --- */
 .message-wrapper { display: flex; gap: 1rem; padding: 1rem 1rem; }
-.message-wrapper.user { justify-content: flex-end; }
+.message-wrapper.user { justify-content: flex-start; }
 .avatar-container {
     width: 2.5rem; height: 2.5rem; border-radius: 50%;
     background-color: var(--color-surface); flex-shrink: 0;
@@ -132,9 +131,6 @@ body, html {
 .message-content p {
     white-space: pre-wrap; word-wrap: break-word; line-height: 1.75;
     font-size: 1rem;
-}
-.message-wrapper.user .message-content p {
-    color: var(--color-user-message-text);
 }
 .message-sender { font-weight: bold; margin-bottom: 0.5rem; font-family: var(--font-primary); }
 
