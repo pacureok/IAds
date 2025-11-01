@@ -39,7 +39,7 @@ body, html {
     display: flex;
 }
 
-/* --- Loader --- */
+/* --- Loader --- */ 
 .loader-spinner {
     width: 4rem;
     height: 4rem;
