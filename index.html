@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/x-icon" href="/images.ico" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Pacure AI</title>
+    <title>Pacure AI - AI Music Companion</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
@@ -43,32 +43,23 @@
                 </div>
             </header>
 
-            <main id="chat-container" class="chat-container">
-                <!-- Messages will be injected by JS -->
-            </main>
-
-            <footer class="app-footer">
-                <p id="error-message" class="error-message"></p>
-                <div class="chat-input-wrapper">
-                    <form id="chat-form" class="chat-form">
-                        <button type="button" id="mic-button" class="mic-button" aria-label="Start listening">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" x2="12" y1="19" y2="22"></line></svg>
-                        </button>
-                        <textarea
-                            id="message-input"
-                            placeholder="Describe the music you want to create..."
-                            class="message-input"
-                            rows="1"
-                        ></textarea>
-                        <button type="submit" id="send-button" class="send-button" aria-label="Send message">
-                           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg>
-                        </button>
-                    </form>
+            <main class="conversation-container">
+                <div id="transcript-container" class="transcript-container">
+                    <!-- Real-time transcript will appear here -->
                 </div>
-            </footer>
+
+                <div class="orb-container">
+                    <button id="orb-button" class="orb">
+                        <svg class="orb-icon" xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" x2="12" y1="19" y2="22"></line></svg>
+                    </button>
+                </div>
+                
+                <p id="status-text" class="status-text">Say "Hey AI" or "Okay AI" to begin.</p>
+            </main>
         </div>
     </div>
-
+    
+    <script type="module" src="https://cdn.jsdelivr.net/npm/@google/generative-ai/dist/index.min.js"></script>
     <script src="/script.js"></script>
 </body>
 </html>
