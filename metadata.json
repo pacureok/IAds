@@ -1,6 +1,6 @@
 {
-  "name": "Gemini MIDI Composer",
-  "description": "An AI-powered music composition assistant that generates MIDI files from text or voice prompts. Leveraging Gemini, users can provide a musical idea or a starting note, and the app will generate a sequence of notes, instruments, and durations, which can then be downloaded as a MIDI file.",
+  "name": "Pacure AI",
+  "description": "Pacure AI is an AI-powered music composition assistant that generates MIDI files from text or voice prompts. Leveraging Gemini, users can provide a musical idea or a starting note, and the app will generate a sequence of notes, instruments, and durations, which can then be downloaded as a MIDI file.",
   "requestFramePermissions": [
     "microphone"
   ]
