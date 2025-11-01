@@ -1,11 +1,10 @@
-
 services:
   # Frontend Service (Static Site)
   - type: static
     name: gemini-midi-composer-frontend
     env: node
     plan: free
-    repo: https://github.com/tu_usuario/tu_repositorio # IMPORTANT: Replace with your repo URL
+    repo: https://github.com/pacureok/IAds/tree/main # IMPORTANT: Replace with your repo URL
     buildCommand: "npm install && npm run build"
     publishDirectory: "dist"
     envVars:
@@ -16,20 +15,20 @@ services:
           envVarKey: GOOGLE_CLIENT_ID
     rewrites:
       - source: /login
-        destination: https://gemini-midi-composer-backend.onrender.com/login
+        destination: http://gemini-midi-composer-backend/login
       - source: /logout
-        destination: https://gemini-midi-composer-backend.onrender.com/logout
+        destination: http://gemini-midi-composer-backend/logout
       - source: /authorize
-        destination: https://gemini-midi-composer-backend.onrender.com/authorize
+        destination: http://gemini-midi-composer-backend/authorize
       - source: /api/:path*
-        destination: https://gemini-midi-composer-backend.onrender.com/api/:path*
+        destination: http://gemini-midi-composer-backend/api/:path*
 
   # Backend Service (Web Service)
   - type: web
     name: gemini-midi-composer-backend
     env: python
     plan: free
-    repo: https://github.com/tu_usuario/tu_repositorio # IMPORTANT: Replace with your repo URL
+    repo: https://github.com/pacureok/IAds/tree/main # IMPORTANT: Replace with your repo URL
     buildCommand: "pip install -r backend/requirements.txt"
     startCommand: "gunicorn backend.app:app"
     envVars:
