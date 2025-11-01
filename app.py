@@ -3,13 +3,17 @@ import json
 from flask import Flask, redirect, request, session, url_for, jsonify, render_template
 from google_auth_oauthlib.flow import Flow
 import google.generativeai as genai
+import google.auth.transport.requests
+import google.oauth2.id_token
 import requests
 from dotenv import load_dotenv
 
 # Cargar variables de entorno para desarrollo local
 load_dotenv()
 
-app = Flask(__name__)
+# --- Configuración de Flask ---
+# Le decimos a Flask que busque los templates y archivos estáticos en el directorio raíz ('.')
+app = Flask(__name__, template_folder='.', static_folder='.')
 app.secret_key = os.environ.get("SECRET_KEY")
 
 # --- Configuración de Google OAuth ---
@@ -19,7 +23,8 @@ GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET")
 # Asegúrate de que la URL de redirección sea HTTPS en producción
 if 'RENDER' in os.environ:
     os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '0'
-    redirect_uri = 'https://pacure-ai.onrender.com/callback' # Asegúrate que coincida con tu URL de Render
+    # Usando la URL de los logs de error del usuario
+    redirect_uri = 'https://ia-pacus.onrender.com/callback'
 else:
     os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1' # Permite HTTP para desarrollo local
     redirect_uri = 'http://127.0.0.1:5000/callback'
@@ -31,11 +36,6 @@ client_secrets_dict = {
         "redirect_uris": [redirect_uri],
         "auth_uri": "https://accounts.google.com/o/oauth2/auth",
         "token_uri": "https://oauth2.googleapis.com/token",
-        "userinfo_uri": "https://www.googleapis.com/oauth2/v3/userinfo",
-        "scopes": [
-            "https://www.googleapis.com/auth/userinfo.profile",
-            "https://www.googleapis.com/auth/userinfo.email"
-        ]
     }
 }
 
@@ -75,27 +75,31 @@ def login():
 @app.route('/callback')
 def callback():
     """Maneja la respuesta de Google después de la autenticación."""
-    flow.fetch_token(authorization_response=request.url)
+    try:
+        flow.fetch_token(authorization_response=request.url)
 
-    if not session["state"] == request.args["state"]:
-        return "State does not match!", 400
+        if "state" not in session or session["state"] != request.args.get("state"):
+            return "State does not match!", 400
 
-    credentials = flow.credentials
-    request_session = requests.session()
-    cached_session = request_session
-    token_request = google.auth.transport.requests.Request(session=cached_session)
+        credentials = flow.credentials
+        request_session = requests.session()
+        token_request = google.auth.transport.requests.Request(session=request_session)
 
-    id_info = google.oauth2.id_token.verify_oauth2_token(
-        id_token=credentials._id_token,
-        request=token_request,
-        audience=GOOGLE_CLIENT_ID
-    )
+        id_info = google.oauth2.id_token.verify_oauth2_token(
+            id_token=credentials.id_token,
+            request=token_request,
+            audience=GOOGLE_CLIENT_ID
+        )
 
-    session["google_id"] = id_info.get("sub")
-    session["name"] = id_info.get("name")
-    session["picture"] = id_info.get("picture")
-    
-    return redirect(url_for('index'))
+        session["google_id"] = id_info.get("sub")
+        session["name"] = id_info.get("name")
+        session["picture"] = id_info.get("picture")
+        
+        return redirect(url_for('index'))
+    except Exception as e:
+        # Log del error para depuración
+        print(f"Error during OAuth callback: {e}")
+        return "Authentication failed.", 500
 
 
 @app.route('/logout')
@@ -133,9 +137,9 @@ def compose_music():
         
         response = model.generate_content(
             f"Analyze the following user request and generate a simple, short, single-track musical composition in the specified JSON format. The composition should be between 10 to 20 notes. User request: '{prompt}'",
-            generation_config=genai.types.GenerationConfig(
-                response_mime_type="application/json",
-                response_schema={
+            generation_config={
+                "response_mime_type": "application/json",
+                "response_schema": {
                     "type": "object",
                     "properties": {
                         "instrument": {
@@ -162,11 +166,9 @@ def compose_music():
                     },
                     "required": ["instrument", "notes"]
                 }
-            )
+            }
         )
         
-        # El texto de la respuesta ya es un string JSON formateado
-        # Simplemente lo cargamos para reenviarlo como una respuesta JSON de Flask
         composition_data = json.loads(response.text)
         return jsonify(composition_data)
 
@@ -178,4 +180,4 @@ def compose_music():
 if __name__ == '__main__':
     # El puerto se obtiene de la variable de entorno PORT, común en servicios como Render
     port = int(os.environ.get("PORT", 5000))
-    app.run(host='0.0.0.0', port=port, debug=False) # debug=False para producción
+    app.run(host='0.0.0.0', port=port, debug=False)
