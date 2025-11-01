@@ -6,23 +6,19 @@ import google.generativeai as genai
 import requests
 
 # --- Inicialización de la Aplicación ---
-# Verifica la SECRET_KEY al inicio para prevenir errores en tiempo de ejecución.
-# Render.com generará este valor. Para desarrollo local, lo establecerías en un archivo .env.
-SECRET_KEY = os.environ.get("SECRET_KEY")
-if not SECRET_KEY:
-    raise ValueError("No se ha configurado la SECRET_KEY para la aplicación Flask. Por favor, establécela en tus variables de entorno.")
-
 # Inicializa la aplicación Flask
 # template_folder='.' le dice a Flask que busque index.html en el directorio raíz.
 # static_folder='.' le dice a Flask que sirva archivos estáticos (como script.js, style.css) desde la raíz.
 app = Flask(__name__, static_folder='.', static_url_path='', template_folder='.')
-app.secret_key = SECRET_KEY
+# La SECRET_KEY se carga desde las variables de entorno.
+# Es crucial para la seguridad de las sesiones de usuario.
+app.secret_key = os.environ.get("SECRET_KEY")
 
 # --- Configuración de Google OAuth2 ---
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET")
 # La URL externa de tu aplicación en Render.com
-RENDER_EXTERNAL_URL = os.environ.get('RENDER_EXTERNAL_URL') 
+RENDER_EXTERNAL_URL = os.environ.get('RENDER_EXTERNAL_URL')
 
 # Crea dinámicamente el archivo client_secret.json que necesita la librería de Google OAuth.
 # Esto evita tener que subir un archivo de secretos a tu repositorio.
@@ -52,8 +48,10 @@ SCOPES = ['openid', 'https://www.googleapis.com/auth/userinfo.email', 'https://w
 # --- Configuración de la API de Gemini ---
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 if not GEMINI_API_KEY:
-    raise ValueError("No se ha configurado la GEMINI_API_KEY. Por favor, establécela en tus variables de entorno.")
-genai.configure(api_key=GEMINI_API_KEY)
+    # Imprime una advertencia si la clave no está configurada, en lugar de detener la app.
+    print("ADVERTENCIA: No se ha configurado la GEMINI_API_KEY. La API de composición fallará.")
+else:
+    genai.configure(api_key=GEMINI_API_KEY)
 
 # --- Definición del Modelo Gemini ---
 # Instrucción de sistema para guiar el comportamiento del modelo de IA.
@@ -84,6 +82,9 @@ def index():
 @app.route('/login')
 def login():
     """Inicia el flujo de inicio de sesión de Google OAuth."""
+    if not app.secret_key:
+        return "Error del servidor: La SECRET_KEY no está configurada.", 500
+        
     flow = Flow.from_client_secrets_file(
         client_secrets_file=client_secrets_file,
         scopes=SCOPES,
@@ -146,6 +147,9 @@ def api_compose():
     """Endpoint para generar música. Requiere que el usuario haya iniciado sesión."""
     if 'user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
+        
+    if not GEMINI_API_KEY:
+        return jsonify({'error': 'La API de Gemini no está configurada en el servidor.'}), 500
     
     data = request.get_json()
     prompt = data.get('prompt')
