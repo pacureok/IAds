@@ -1,7 +1,6 @@
-
 services:
   - type: web
-    name: gemini-midi-composer
+    name: pacure-ai
     env: python
     plan: free
     buildCommand: "pip install -r requirements.txt"
