@@ -17,6 +17,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const sendButton = document.getElementById('send-button');
     const micButton = document.getElementById('mic-button');
     const errorMessageElement = document.getElementById('error-message');
+    const newChatButton = document.querySelector('.new-chat-button');
 
     // --- INITIALIZATION ---
     const init = async () => {
@@ -122,6 +123,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     
     chatForm.addEventListener('submit', handleSubmit);
+    newChatButton.addEventListener('click', renderWelcomeScreen);
 
     const addMessageToChat = (role, data) => {
         const isUser = role === 'user';
@@ -168,12 +170,25 @@ document.addEventListener('DOMContentLoaded', () => {
         if (data.tool_calls) {
             return data.tool_calls.map(call => {
                 executeToolCall(call);
-                return `<p>Performing action: ${call.name.replace(/_/g, ' ')} with query "${call.args.query}"...</p>`;
+                const actionText = getToolActionText(call);
+                return `<p>${actionText}</p>`;
             }).join('');
         }
         return '<p>Sorry, I received an empty response.</p>';
     };
     
+    const getToolActionText = (call) => {
+        switch(call.name) {
+            case 'play_on_youtube': return `Searching YouTube for "${call.args.query}"...`;
+            case 'search_google': return `Searching Google for "${call.args.query}"...`;
+            case 'create_google_doc': return 'Opening a new Google Doc...';
+            case 'create_google_sheet': return 'Opening a new Google Sheet...';
+            case 'create_google_slides': return 'Opening a new Google Slides presentation...';
+            case 'create_calendar_event': return 'Opening Google Calendar to create a new event...';
+            default: return `Performing an unknown action: ${call.name}`;
+        }
+    };
+
     const executeToolCall = (call) => {
         const { name, args } = call;
         switch(name) {
@@ -182,6 +197,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 break;
             case 'search_google':
                 window.open(`https://www.google.com/search?q=${encodeURIComponent(args.query)}`, '_blank');
+                break;
+            case 'create_google_doc':
+                window.open('https://docs.new', '_blank');
+                break;
+            case 'create_google_sheet':
+                 window.open('https://sheets.new', '_blank');
+                break;
+            case 'create_google_slides':
+                 window.open('https://slides.new', '_blank');
+                break;
+            case 'create_calendar_event':
+                 window.open('https://cal.new', '_blank');
                 break;
             default:
                 console.warn(`Unknown tool call: ${name}`);
@@ -216,7 +243,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const handleApiError = (err) => {
         const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
         if (errorMessage === 'Unauthorized') {
-            addMessageToChat('assistant', { text: 'Your session has expired. Please sign in again.' });
             showError("Your session has expired. Redirecting to login...");
             setTimeout(() => window.location.href = '/', 3000);
         } else {
@@ -230,14 +256,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const generateAndDownloadMidi = (midiData) => {
         if (!window.MidiWriter) return showError('MIDI library not available.');
-        const track = new window.MidiWriter.Track();
-        track.addEvent(new window.MidiWriter.ProgramChangeEvent({ instrument: instrumentNameToProgramNumber[midiData.instrument] || 1 }));
-        midiData.notes.forEach(note => track.addEvent(new window.MidiWriter.NoteEvent(note)));
-        const write = new window.MidiWriter.Writer([track]);
-        const link = document.createElement('a');
-        link.href = write.dataUri();
-        link.download = 'composition.mid';
-        link.click();
+        try {
+            const track = new window.MidiWriter.Track();
+            track.addEvent(new window.MidiWriter.ProgramChangeEvent({ instrument: instrumentNameToProgramNumber[midiData.instrument] || 1 }));
+            midiData.notes.forEach(note => track.addEvent(new window.MidiWriter.NoteEvent(note)));
+            const write = new window.MidiWriter.Writer([track]);
+            const link = document.createElement('a');
+            link.href = write.dataUri();
+            link.download = 'composition.mid';
+            link.click();
+        } catch (err) {
+            console.error("Error generating MIDI file:", err);
+            showError("Failed to generate MIDI file.");
+        }
     };
     
     const attachEventListeners = (element) => {
@@ -259,7 +290,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         if (!SpeechRecognition) { micButton.style.display = 'none'; return; }
         recognition = new SpeechRecognition();
-        recognition.continuous = false; recognition.interimResults = false; recognition.lang = 'en-US';
+        recognition.continuous = false; recognition.interimResults = false;
+        // Try to get browser language, fallback to English
+        recognition.lang = navigator.language || 'en-US'; 
+        
         recognition.onresult = (e) => {
             messageInput.value = e.results[0][0].transcript;
             messageInput.dispatchEvent(new Event('input'));
@@ -275,9 +309,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (isLoading || !recognition) return;
         if (isListening) { recognition.stop(); } 
         else {
-            recognition.start(); isListening = true;
-            micButton.classList.add('listening');
-            messageInput.placeholder = "Listening...";
+            try {
+                recognition.start(); isListening = true;
+                micButton.classList.add('listening');
+                messageInput.placeholder = "Listening...";
+            } catch (err) {
+                console.error("Could not start recognition:", err);
+                showError("Microphone access might be blocked.");
+            }
         }
     });
 
