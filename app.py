@@ -9,16 +9,23 @@ import google.generativeai as genai
 from functools import wraps
 import base64
 from io import BytesIO
-# midiutil debe estar instalado (pip install midiutil)
+# midiutil debe estar en requirements.txt
 from midiutil.MidiFile import MIDIFile
 from typing import Dict, Any
 
 # ---------------------------------------------------------------------
 # Configuración de Flask
 # ---------------------------------------------------------------------
+
+# La clave secreta es OBLIGATORIA para las sesiones de Flask.
+# Esta comprobación detendrá la aplicación si la clave no está configurada en Render,
+# mostrando un error claro en los logs.
+FLASK_SECRET_KEY = os.environ.get('FLASK_SECRET_KEY')
+if not FLASK_SECRET_KEY:
+    raise ValueError("Error Crítico: La variable de entorno FLASK_SECRET_KEY no está configurada. Por favor, añádela en tu panel de control de Render.")
+
 app = Flask(__name__, static_folder='.', static_url_path='', template_folder='.')
-# La clave secreta es OBLIGATORIA para las sesiones de Flask. Se carga desde las variables de entorno.
-app.secret_key = os.environ.get('FLASK_SECRET_KEY')
+app.secret_key = FLASK_SECRET_KEY
 
 # ---------------------------------------------------------------------
 # Configuración de OAuth (Google Login) - USANDO AUTHLIB
@@ -96,9 +103,7 @@ def create_midi_file(composition_data: Dict[str, Any]) -> str:
     mf = MIDIFile(1)
     track, time, tempo = 0, 0, 120
     mf.addTempo(track, time, tempo)
-
-    # El programa/instrumento se establece en 0 (Piano Acústico) como valor por defecto.
-    mf.addProgramChange(track, 0, time, 0)
+    mf.addProgramChange(track, 0, time, 0) # Programa/instrumento 0 (Piano Acústico)
 
     for note_obj in composition_data.get('notes', []):
         pitch_str = note_obj.get('pitch', 'rest')
@@ -126,7 +131,7 @@ def index():
 
 @app.route('/images.ico')
 def favicon():
-    """Sirve un favicon vacío para evitar errores 404 en la consola."""
+    """Sirve un recurso vacío para el favicon y evitar errores 404 en la consola."""
     return Response(status=204)
 
 # --- Rutas de Autenticación de Authlib ---
@@ -143,7 +148,7 @@ def callback():
     """Maneja la redirección de Google después de la autenticación."""
     try:
         token = oauth.google.authorize_access_token()
-        # Authlib ahora guarda la información del usuario en session['user']
+        # Authlib obtiene la información del usuario y la guardamos en la sesión.
         session['user'] = token.get('userinfo')
     except Exception as e:
         print(f"Error durante el proceso de callback de OAuth: {e}")
@@ -188,7 +193,6 @@ def api_compose():
         composition_data = json.loads(response.text)
         midi_base64 = create_midi_file(composition_data)
         
-        # Devolvemos la respuesta que espera el frontend.
         return jsonify({'midi_data': f"data:audio/midi;base64,{midi_base64}"})
         
     except Exception as e:
