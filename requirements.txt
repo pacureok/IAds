@@ -1,7 +1,8 @@
-
 Flask
 gunicorn
 google-generativeai
-google-auth-oauthlib
 requests
-python-dotenv
+authlib
+beautifulsoup4
+nltk
+midiutil
