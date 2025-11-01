@@ -1,0 +1,19 @@
+
+services:
+  - type: web
+    name: gemini-midi-composer
+    env: python
+    plan: free
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "gunicorn app:app"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.4
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: SECRET_KEY
+        generateValue: true
