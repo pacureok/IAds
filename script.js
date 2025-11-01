@@ -2,12 +2,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- STATE ---
     let user = null;
     let isLoading = false;
-    let isChatLifeActive = false;
-    let currentMode = 'gemini'; // 'gemini', 'deep-search', 'summarize'
-    
-    // Speech Recognition instances
-    let hotwordRecognition = null;
-    let chatRecognition = null;
+    let isListening = false;
+    let recognition = null;
 
     // --- DOM ELEMENTS ---
     const authLoaderView = document.getElementById('auth-loader-view');
@@ -21,26 +17,43 @@ document.addEventListener('DOMContentLoaded', () => {
     const sendButton = document.getElementById('send-button');
     const micButton = document.getElementById('mic-button');
     const errorMessageElement = document.getElementById('error-message');
-    const newChatButton = document.querySelector('.new-chat-button');
-    const modeButtons = document.querySelectorAll('.mode-button');
-    const chatLifeButton = document.getElementById('chat-life-button');
-    const hotwordStatus = document.getElementById('hotword-status');
+    
+    const sendIconSVG = sendButton.innerHTML;
+
+    const GEMINI_ICON_SVG = `
+        <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M20 5.41663C19.0712 5.41663 18.3333 6.15453 18.3333 7.08329C18.3333 8.01205 19.0712 8.74996 20 8.74996C20.9288 8.74996 21.6667 8.01205 21.6667 7.08329C21.6667 6.15453 20.9288 5.41663 20 5.41663Z" fill="url(#paint0_linear_1_2)"/>
+            <path d="M32.9167 18.3333C32.9167 17.4045 32.1788 16.6666 31.25 16.6666C30.3212 16.6666 29.5833 17.4045 29.5833 18.3333C29.5833 19.262 30.3212 20 31.25 20C32.1788 20 32.9167 19.262 32.9167 18.3333Z" fill="url(#paint1_linear_1_2)"/>
+            <path d="M8.75 18.3333C8.75 17.4045 7.98795 16.6666 7.08333 16.6666C6.15458 16.6666 5.41667 17.4045 5.41667 18.3333C5.41667 19.262 6.15458 20 7.08333 20C7.98795 20 8.75 19.262 8.75 18.3333Z" fill="url(#paint2_linear_1_2)"/>
+            <path d="M20 29.5833C19.0712 29.5833 18.3333 30.3212 18.3333 31.25C18.3333 32.1788 19.0712 32.9166 20 32.9166C20.9288 32.9166 21.6667 32.1788 21.6667 31.25C21.6667 30.3212 20.9288 29.5833 20 29.5833Z" fill="url(#paint3_linear_1_2)"/>
+            <defs>
+            <linearGradient id="paint0_linear_1_2" x1="20" y1="5.41663" x2="20" y2="8.74996" gradientUnits="userSpaceOnUse"><stop stop-color="#8E83EE"/><stop offset="1" stop-color="#5E83F5"/></linearGradient>
+            <linearGradient id="paint1_linear_1_2" x1="31.25" y1="16.6666" x2="31.25" y2="20" gradientUnits="userSpaceOnUse"><stop stop-color="#5E83F5"/><stop offset="1" stop-color="#42D7F0"/></linearGradient>
+            <linearGradient id="paint2_linear_1_2" x1="7.08333" y1="16.6666" x2="7.08333" y2="20" gradientUnits="userSpaceOnUse"><stop stop-color="#F5C54F"/><stop offset="1" stop-color="#F2A84E"/></linearGradient>
+            <linearGradient id="paint3_linear_1_2" x1="20" y1="29.5833" x2="20" y2="32.9166" gradientUnits="userSpaceOnUse"><stop stop-color="#F2A84E"/><stop offset="1" stop-color="#F25E5E"/></linearGradient>
+            </defs>
+        </svg>
+    `;
 
     // --- INITIALIZATION ---
+
     const init = async () => {
         showView('auth-loader');
+        setupSpeechRecognition();
         await checkSession();
     };
 
     // --- AUTHENTICATION ---
+    
     const checkSession = async () => {
         try {
             const response = await fetch('/api/session');
             if (response.ok) {
-                user = await response.json();
-                renderLoggedInState();
+                const userData = await response.json();
+                user = userData;
+                renderLoggedInState(user);
                 showView('app');
-                initializeSpeechRecognition();
+                addInitialView();
             } else {
                 user = null;
                 renderLoggedOutState();
@@ -48,424 +61,326 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } catch (err) {
             console.error("Failed to check session:", err);
-            showError("Could not connect to the server.");
+            showError("Could not connect to the server to check your session.");
             renderLoggedOutState();
             showView('logged-out');
         }
     };
 
-    loginButton.addEventListener('click', () => { window.location.href = '/login'; });
-
-    const renderLoggedInState = () => {
+    const renderLoggedInState = (userData) => {
         userInfoContainer.innerHTML = `
-            <img src="${user.picture}" alt="User avatar" class="user-avatar" />
-            <div class="user-details">
-                <span class="user-name">${user.name}</span>
-                <button id="logout-button" class="logout-button">Sign Out</button>
-            </div>
+            <img src="${userData.picture}" alt="${userData.name}" class="user-avatar" />
+            <span class="user-name">${userData.name}</span>
+            <button id="logout-button" class="logout-button">Sign Out</button>
         `;
-        document.getElementById('logout-button').addEventListener('click', () => window.location.href = '/logout');
-        renderWelcomeScreen();
+        document.getElementById('logout-button').addEventListener('click', () => {
+            window.location.href = '/logout';
+        });
+        messageInput.disabled = false;
+        messageInput.placeholder = "Describe the music you want to create...";
+        sendButton.disabled = true;
+        micButton.disabled = false;
     };
 
-    const renderLoggedOutState = () => { userInfoContainer.innerHTML = ''; chatContainer.innerHTML = ''; };
+    const renderLoggedOutState = () => {
+        userInfoContainer.innerHTML = '';
+        messageInput.disabled = true;
+        messageInput.placeholder = "Please sign in to start composing...";
+        sendButton.disabled = true;
+        micButton.disabled = true;
+    };
     
-    // --- VIEW MANAGEMENT ---
-    const showView = (viewName) => {
-        document.querySelectorAll('.view').forEach(v => v.classList.remove('visible'));
-        document.getElementById(`${viewName}-view`).classList.add('visible');
-    };
+    loginButton.addEventListener('click', () => {
+        window.location.href = '/login';
+    });
 
-    const renderWelcomeScreen = () => {
-        chatContainer.innerHTML = `
-            <div class="welcome-screen">
-                <h1 class="welcome-title">Hello, ${user.name.split(' ')[0]}</h1>
-                <h2 class="welcome-subtitle">How can I help you today?</h2>
+    // --- VIEW MANAGEMENT ---
+    
+    const showView = (viewName) => {
+        authLoaderView.classList.toggle('visible', viewName === 'auth-loader');
+        loggedOutView.classList.toggle('visible', viewName === 'logged-out');
+        appView.classList.toggle('visible', viewName === 'app');
+    };
+    
+    const addInitialView = () => {
+        chatContainer.innerHTML = ''; // Clear previous content
+        
+        const welcomeHTML = `
+            <div class="initial-view">
+                <div class="initial-view-header">
+                    <div class="gemini-icon-large">${GEMINI_ICON_SVG.replace(/40/g, '80')}</div>
+                    <h1>Hello, ${user ? user.name.split(' ')[0] : ''}!</h1>
+                    <p>What music are we creating today?</p>
+                </div>
+                <div class="suggestion-chips">
+                    <button class="suggestion-chip" data-prompt="A simple, happy melody on a music box">Simple melody on a music box</button>
+                    <button class="suggestion-chip" data-prompt="A spooky theme for a Halloween video using a church organ">Spooky Halloween theme</button>
+                    <button class="suggestion-chip" data-prompt="Create an 8-bit chiptune track for a retro game">8-bit chiptune track</button>
+                    <button class="suggestion-chip" data-prompt="A lo-fi hip hop beat with an electric piano">Lo-fi hip hop beat</button>
+                </div>
             </div>
         `;
+        chatContainer.innerHTML = welcomeHTML;
     };
 
-    // --- CHAT & API LOGIC ---
+    // --- CHAT LOGIC ---
+
     const handleSubmit = async (e) => {
-        if (e) e.preventDefault();
+        e.preventDefault();
         const prompt = messageInput.value.trim();
         if (!prompt || isLoading || !user) return;
 
-        if (chatContainer.querySelector('.welcome-screen')) chatContainer.innerHTML = '';
+        // Clear initial view if it exists
+        const initialView = chatContainer.querySelector('.initial-view');
+        if (initialView) {
+            chatContainer.innerHTML = '';
+        }
        
-        addMessageToChat('user', { text: prompt });
+        addMessageToChat('user', prompt);
         messageInput.value = '';
         resizeTextarea();
         setLoading(true);
         showError(null);
 
         try {
-            let response;
-            if (currentMode === 'deep-search') {
-                response = await fetch(`/api/wikipedia-summary?q=${encodeURIComponent(prompt)}`);
-            } else {
-                const finalPrompt = currentMode === 'summarize' ? `que vez aqui y da tu opinion ${prompt}` : prompt;
-                response = await fetch('/api/chat', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ prompt: finalPrompt }),
-                });
-            }
-
-            if (!response.ok) {
-                const errData = await response.json().catch(() => ({error: 'Server returned an error.'}));
-                throw new Error(errData.error);
-            }
-            
-            const result = await response.json();
-            addMessageToChat('assistant', result);
-            if (isChatLifeActive && result.text) {
-                speak(result.text, null, () => {
-                    // After TTS finishes, listen for the next command
-                    if (isChatLifeActive) startChatRecognition();
-                });
-            }
-
+            const result = await generateMusicComposition(prompt);
+            const content = `Here is a composition based on your request. I've used the ${result.instrument.replace(/_/g, ' ')}. You can download the MIDI file below.`;
+            addMessageToChat('assistant', content, result);
         } catch (err) {
-            handleApiError(err);
+            const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
+            if (errorMessage === 'Unauthorized') {
+                addMessageToChat('assistant', 'Your session has expired. Please sign in again to continue creating.');
+                showError("Your session has expired. Please sign in again.");
+                user = null;
+                setTimeout(() => {
+                    renderLoggedOutState();
+                    showView('logged-out');
+                    chatContainer.innerHTML = '';
+                }, 3000);
+            } else {
+                showError(`Sorry, I couldn't generate the music. ${errorMessage}`);
+                addMessageToChat('assistant', 'Sorry, I had trouble generating the music. Please try a different prompt.');
+            }
         } finally {
             setLoading(false);
         }
     };
     
     chatForm.addEventListener('submit', handleSubmit);
-    newChatButton.addEventListener('click', renderWelcomeScreen);
 
-    const addMessageToChat = (role, data) => {
+    const addMessageToChat = (role, content, midiData = null) => {
         const isUser = role === 'user';
         const messageWrapper = document.createElement('div');
-        messageWrapper.className = `message-wrapper ${role}`;
+        messageWrapper.className = `message-wrapper ${isUser ? 'user' : 'assistant'}`;
 
-        const avatarSrc = isUser ? user.picture : '/imagres.ico';
-        const senderName = isUser ? user.name : 'pacure ai';
+        let messageHTML = `
+            <div class="avatar-container">
+                ${isUser ? `<img src="${user.picture}" alt="${user.name}" />` : GEMINI_ICON_SVG}
+            </div>
+            <div class="message-content-wrapper">
+                <div class="message-content">
+                    <p>${content.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</p>
+        `;
 
-        let contentHTML = generateMessageContent(data);
-        let actionsHTML = '';
-        if (!isUser) {
-            actionsHTML = `
-                <div class="message-actions">
-                    <button class="icon-button action-button tts-button" aria-label="Read aloud">
-                        <span class="material-symbols-outlined">volume_up</span>
-                    </button>
-                    <button class="icon-button action-button like-button" aria-label="Like response">
-                        <span class="material-symbols-outlined">thumb_up</span>
-                    </button>
-                    <button class="icon-button action-button dislike-button" aria-label="Dislike response">
-                        <span class="material-symbols-outlined">thumb_down</span>
-                    </button>
+        if (midiData) {
+            const midiString = JSON.stringify(midiData).replace(/'/g, "&apos;");
+            messageHTML += `
+                <div class="midi-card">
+                    <div class="midi-details">
+                        <p>Instrument: <span>${midiData.instrument.replace(/_/g, ' ')}</span></p>
+                        <button class="download-button" data-midi='${midiString}'>
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" x2="12" y1="15" y2="3"></line></svg>
+                            <span>Download MIDI</span>
+                        </button>
+                    </div>
                 </div>
             `;
         }
 
-        messageWrapper.innerHTML = `
-            <div class="avatar-container"> <img src="${avatarSrc}" alt="${senderName} avatar" /> </div>
-            <div class="message-content">
-                <p class="message-sender">${senderName}</p>
-                <div class="message-body">${contentHTML}</div>
-                ${actionsHTML}
-            </div>
-        `;
-
+        messageHTML += `</div></div>`;
+        messageWrapper.innerHTML = messageHTML;
         chatContainer.appendChild(messageWrapper);
         scrollToBottom();
     };
-
-    const generateMessageContent = (data) => {
-        if (data.text) {
-             let html = `<p class="message-text">${data.text.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</p>`;
-             if(data.source) {
-                html += `<div class="source-card">
-                    <span class="material-symbols-outlined">book</span>
-                    Source: <a href="${data.source.url}" target="_blank">${data.source.title}</a>
-                </div>`;
-             }
-             return html;
-        }
-        if (data.midiData) {
-            const midiString = JSON.stringify(data.midiData).replace(/'/g, "&apos;");
-            return `
-                <p class="message-text">Here is the composition you requested: ${data.midiData.instrument.replace(/_/g, ' ')}.</p>
-                <div class="card">
-                    <div class="card-title"><span class="material-symbols-outlined">music_note</span>Composition</div>
-                    <div class="card-content">
-                        <span class="card-text">${data.midiData.instrument.replace(/_/g, ' ')}</span>
-                        <button class="card-button download-button" data-midi='${midiString}'>
-                            <span class="material-symbols-outlined">download</span> Download
-                        </button>
-                    </div>
-                </div>`;
-        }
-        if (data.tool_calls) {
-            return data.tool_calls.map(call => {
-                executeToolCall(call);
-                return `<p class="message-text">${getToolActionText(call)}</p>`;
-            }).join('');
-        }
-        return '<p class="message-text">Sorry, I received an empty response.</p>';
-    };
-
+    
     const setLoading = (state) => {
         isLoading = state;
         sendButton.disabled = isLoading || !messageInput.value.trim();
         micButton.disabled = isLoading;
         messageInput.disabled = isLoading;
         
-        const existingLoader = document.getElementById('loading-indicator');
-        if (existingLoader) existingLoader.remove();
-        
         if (isLoading) {
+            const existingLoader = document.getElementById('loading-indicator');
+            if (existingLoader) existingLoader.remove();
+            
             const loaderDiv = document.createElement('div');
             loaderDiv.id = 'loading-indicator';
             loaderDiv.className = 'message-wrapper assistant';
             loaderDiv.innerHTML = `
-                <div class="avatar-container"><img src="/imagres.ico" alt="Assistant avatar" /></div>
-                <div class="message-content">
-                    <p class="message-sender">pacure ai</p>
-                    <div class="loading-dots"><div></div><div></div><div></div></div>
-                </div>`;
+                 <div class="avatar-container">
+                    ${GEMINI_ICON_SVG}
+                </div>
+                <div class="message-content-wrapper">
+                    <div class="loading-dots">
+                        <div></div><div></div><div></div>
+                    </div>
+                </div>
+            `;
             chatContainer.appendChild(loaderDiv);
             scrollToBottom();
+            sendButton.innerHTML = `<div class="loader-spinner-small"></div>`;
+        } else {
+            const loader = document.getElementById('loading-indicator');
+            if (loader) loader.remove();
+            sendButton.innerHTML = sendIconSVG;
         }
     };
 
-    const handleApiError = (err) => {
-        const errorMessage = err.message || 'An unknown error occurred';
-        addMessageToChat('assistant', { text: `Sorry, I ran into a problem: ${errorMessage}` });
-    };
+    // --- API & SERVICES ---
     
-    // --- EVENT LISTENERS (Delegated) ---
-    chatContainer.addEventListener('click', (e) => {
-        const button = e.target.closest('button');
-        if (!button) return;
+    async function generateMusicComposition(prompt) {
+        const response = await fetch('/api/compose', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt }),
+        });
 
-        if (button.classList.contains('download-button')) {
-            try {
-                const midiData = JSON.parse(button.dataset.midi);
-                generateAndDownloadMidi(midiData);
-            } catch(err) { showError("Could not download MIDI: Invalid data."); }
+        if (response.status === 401) throw new Error('Unauthorized');
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'The server returned an error.');
+        }
+        return await response.json();
+    }
+    
+    const instrumentNameToProgramNumber = {
+      acoustic_grand_piano: 1, bright_acoustic_piano: 2, electric_grand_piano: 3, honky_tonk_piano: 4, electric_piano_1: 5, electric_piano_2: 6, harpsichord: 7, clavi: 8, celesta: 9, glockenspiel: 10, music_box: 11, vibraphone: 12, marimba: 13, xylophone: 14, tubular_bells: 15, dulcimer: 16, drawbar_organ: 17, percussive_organ: 18, rock_organ: 19, church_organ: 20, reed_organ: 21, accordion: 22, harmonica: 23, tango_accordion: 24, acoustic_guitar_nylon: 25, acoustic_guitar_steel: 26, electric_guitar_jazz: 27, electric_guitar_clean: 28, electric_guitar_muted: 29, overdriven_guitar: 30, distortion_guitar: 31, guitar_harmonics: 32, acoustic_bass: 33, electric_bass_finger: 34, electric_bass_pick: 35, fretless_bass: 36, slap_bass_1: 37, slap_bass_2: 38, synth_bass_1: 39, synth_bass_2: 40, violin: 41, viola: 42, cello: 43, contrabass: 44, tremolo_strings: 45, pizzicato_strings: 46, orchestral_harp: 47, timpani: 48, string_ensemble_1: 49, string_ensemble_2: 50, synth_strings_1: 51, synth_strings_2: 52, choir_aahs: 53, voice_oohs: 54, synth_voice: 55, orchestra_hit: 56, trumpet: 57, trombone: 58, tuba: 59, muted_trumpet: 60, french_horn: 61, brass_section: 62, synth_brass_1: 63, synth_brass_2: 64, soprano_sax: 65, alto_sax: 66, tenor_sax: 67, baritone_sax: 68, oboe: 69, english_horn: 70, bassoon: 71, clarinet: 72, piccolo: 73, flute: 74, recorder: 75, pan_flute: 76, blown_bottle: 77, shakuhachi: 78, whistle: 79, ocarina: 80,
+    };
+
+    const generateAndDownloadMidi = (midiData, fileName = 'composition.mid') => {
+        if (!window.MidiWriter) {
+            console.error('midi-writer-js is not loaded.');
+            alert('MIDI library not available. Please refresh the page.');
             return;
         }
         
-        const messageBody = button.closest('.message-content')?.querySelector('.message-body .message-text');
-        if (!messageBody) return;
-        
-        if (button.classList.contains('tts-button')) {
-            speak(messageBody.textContent, button);
-        } else if (button.classList.contains('like-button')) {
-            button.classList.toggle('active');
-            button.parentElement.querySelector('.dislike-button.active')?.classList.remove('active');
-        } else if (button.classList.contains('dislike-button')) {
-            button.classList.toggle('active');
-            button.parentElement.querySelector('.like-button.active')?.classList.remove('active');
-        }
-    });
+        const track = new window.MidiWriter.Track();
+        const programNumber = instrumentNameToProgramNumber[midiData.instrument] || 1;
+        track.addEvent(new window.MidiWriter.ProgramChangeEvent({ instrument: programNumber }));
 
-    // --- MODE SWITCHING ---
-    modeButtons.forEach(button => {
-        button.addEventListener('click', () => {
-            currentMode = button.dataset.mode;
-            modeButtons.forEach(btn => btn.classList.remove('active'));
-            button.classList.add('active');
-            updatePlaceholder();
+        midiData.notes.forEach(note => {
+            track.addEvent(new window.MidiWriter.NoteEvent({
+                pitch: note.pitch,
+                duration: note.duration,
+            }));
         });
+
+        const write = new window.MidiWriter.Writer([track]);
+        const dataUri = write.dataUri();
+        
+        const link = document.createElement('a');
+        link.href = dataUri;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+    
+    chatContainer.addEventListener('click', (e) => {
+        // Handle suggestion chip clicks
+        const chip = e.target.closest('.suggestion-chip');
+        if (chip && !isLoading) {
+            messageInput.value = chip.dataset.prompt;
+            resizeTextarea();
+            messageInput.focus();
+            sendButton.disabled = false;
+            // Optionally auto-submit:
+            // chatForm.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+            return;
+        }
+
+        // Handle download button clicks
+        const downloadButton = e.target.closest('.download-button');
+        if (downloadButton && downloadButton.dataset.midi) {
+            try {
+                const midiData = JSON.parse(downloadButton.dataset.midi);
+                generateAndDownloadMidi(midiData);
+            } catch(err) {
+                console.error("Failed to parse MIDI data:", err);
+                showError("Could not download MIDI file due to invalid data.");
+            }
+        }
     });
 
-    const updatePlaceholder = () => {
-        switch(currentMode) {
-            case 'gemini': messageInput.placeholder = "Enter a prompt here"; break;
-            case 'deep-search': messageInput.placeholder = "Search Wikipedia for..."; break;
-            case 'summarize': messageInput.placeholder = "Enter URLs separated by commas..."; break;
-        }
-    };
-
-    // --- SPEECH RECOGNITION & CHAT LIFE ---
-    const initializeSpeechRecognition = () => {
+    // --- SPEECH RECOGNITION ---
+    
+    const setupSpeechRecognition = () => {
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         if (!SpeechRecognition) {
             micButton.style.display = 'none';
-            chatLifeButton.style.display = 'none';
-            hotwordStatus.style.display = 'none';
             return;
         }
 
-        // Hotword recognizer
-        hotwordRecognition = new SpeechRecognition();
-        hotwordRecognition.continuous = true;
-        hotwordRecognition.interimResults = false;
-        hotwordRecognition.lang = navigator.language || 'en-US';
-        
-        hotwordRecognition.onresult = (e) => {
-            const transcript = e.results[e.results.length - 1][0].transcript.trim().toLowerCase();
-            if (transcript.includes('hey ai') || transcript.includes('ok ai')) {
-                toggleChatLife(true);
+        recognition = new SpeechRecognition();
+        recognition.continuous = false;
+        recognition.interimResults = false;
+        recognition.lang = 'en-US';
+
+        recognition.onresult = (event) => {
+            const transcript = event.results[0][0].transcript;
+            messageInput.value = transcript;
+            messageInput.dispatchEvent(new Event('input')); 
+        };
+        recognition.onerror = (event) => console.error('Speech recognition error:', event.error);
+        recognition.onend = () => {
+            isListening = false;
+            micButton.classList.remove('listening');
+            if (user) {
+                messageInput.placeholder = "Describe the music you want to create...";
             }
         };
-        hotwordRecognition.onend = () => {
-            // Restart listening unless we are in an active Chat Life session
-            if (!isChatLifeActive) {
-                try { hotwordRecognition.start(); } catch(e) {}
-            }
-        };
-        hotwordRecognition.onerror = (e) => {
-             console.error('Hotword recognition error:', e.error);
-             if (e.error === 'not-allowed') {
-                showError('Microphone access denied. Voice features disabled.');
-                hotwordStatus.innerHTML = `<span class="material-symbols-outlined">mic_off</span><span>Mic access denied</span>`;
-             }
-        };
-        
-        // Chat recognizer (for single inputs or Chat Life turns)
-        chatRecognition = new SpeechRecognition();
-        chatRecognition.continuous = false;
-        chatRecognition.interimResults = false;
-        chatRecognition.lang = navigator.language || 'en-US';
-        
-        chatRecognition.onresult = (e) => {
-            const transcript = e.results[0][0].transcript;
-            if (isChatLifeActive) {
-                messageInput.value = transcript;
-                handleSubmit();
-            } else {
-                messageInput.value = transcript;
-                messageInput.dispatchEvent(new Event('input'));
-            }
-        };
-        chatRecognition.onend = () => { micButton.classList.remove('listening'); };
-        chatRecognition.onerror = (e) => console.error('Chat recognition error:', e.error);
-        
-        startHotwordRecognition();
-    };
-    
-    const startHotwordRecognition = () => {
-        try {
-            hotwordRecognition.start();
-            hotwordStatus.innerHTML = `<span class="material-symbols-outlined active">mic</span><span>Listening for "Hey AI"...</span>`;
-        } catch(err) {
-            hotwordStatus.innerHTML = `<span class="material-symbols-outlined">mic_off</span><span>Mic off</span>`;
-            console.error("Could not start hotword listener:", err);
-        }
-    };
-    
-    const startChatRecognition = () => {
-        try {
-            chatRecognition.start();
-            micButton.classList.add('listening');
-        } catch (err) {
-            console.error("Could not start chat recognition:", err);
-            showError("Could not start microphone.");
-            if (isChatLifeActive) toggleChatLife(false);
-        }
     };
 
-    const toggleChatLife = (forceState) => {
-        const newState = forceState !== undefined ? forceState : !isChatLifeActive;
-        isChatLifeActive = newState;
-        chatLifeButton.classList.toggle('active', isChatLifeActive);
-
-        if (isChatLifeActive) {
-            hotwordRecognition.stop(); // Stop hotword listener
-            hotwordStatus.classList.add('active-chat-life');
-            hotwordStatus.innerHTML = `<span class="material-symbols-outlined">record_voice_over</span><span>Chat Life Active</span>`;
-            addMessageToChat('assistant', { text: "Chat Life activated. How can I help?" });
-            speak("Chat Life activated. How can I help?", null, startChatRecognition);
+    micButton.addEventListener('click', () => {
+        if (isLoading || !recognition) return;
+        if (isListening) {
+            recognition.stop();
         } else {
-            speechSynthesis.cancel();
-            chatRecognition.stop();
-            hotwordStatus.classList.remove('active-chat-life');
-            startHotwordRecognition(); // Restart hotword listener
-            addMessageToChat('assistant', { text: "Chat Life deactivated." });
+            recognition.start();
+            isListening = true;
+            micButton.classList.add('listening');
+            messageInput.placeholder = "Listening...";
         }
-    };
-
-    chatLifeButton.addEventListener('click', () => toggleChatLife());
-    micButton.addEventListener('click', startChatRecognition);
-
-
-    // --- TEXT-TO-SPEECH (TTS) ---
-    const speak = (text, buttonElement, onEndCallback) => {
-        speechSynthesis.cancel(); // Stop any previous speech
-        document.querySelectorAll('.tts-button.speaking').forEach(btn => btn.classList.remove('speaking'));
-
-        if (!text) return;
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = document.documentElement.lang || 'en-US';
-        
-        utterance.onstart = () => {
-            if (buttonElement) buttonElement.classList.add('speaking');
-        };
-        utterance.onend = () => {
-            if (buttonElement) buttonElement.classList.remove('speaking');
-            if (onEndCallback) onEndCallback();
-        };
-        utterance.onerror = (e) => {
-            console.error('Speech synthesis error:', e);
-            showError('Text-to-speech failed.');
-            if (buttonElement) buttonElement.classList.remove('speaking');
-        };
-        speechSynthesis.speak(utterance);
-    };
-
-    // --- MIDI HELPERS ---
-    const instrumentNameToProgramNumber = { acoustic_grand_piano: 1, bright_acoustic_piano: 2, electric_grand_piano: 3, honky_tonk_piano: 4, electric_piano_1: 5, electric_piano_2: 6, harpsichord: 7, clavi: 8, celesta: 9, glockenspiel: 10, music_box: 11, vibraphone: 12, marimba: 13, xylophone: 14, tubular_bells: 15, dulcimer: 16, drawbar_organ: 17, percussive_organ: 18, rock_organ: 19, church_organ: 20, reed_organ: 21, accordion: 22, harmonica: 23, tango_accordion: 24, acoustic_guitar_nylon: 25, acoustic_guitar_steel: 26, electric_guitar_jazz: 27, electric_guitar_clean: 28, electric_guitar_muted: 29, overdriven_guitar: 30, distortion_guitar: 31, guitar_harmonics: 32, acoustic_bass: 33, electric_bass_finger: 34, electric_bass_pick: 35, fretless_bass: 36, slap_bass_1: 37, slap_bass_2: 38, synth_bass_1: 39, synth_bass_2: 40, violin: 41, viola: 42, cello: 43, contrabass: 44, tremolo_strings: 45, pizzicato_strings: 46, orchestral_harp: 47, timpani: 48, string_ensemble_1: 49, string_ensemble_2: 50, synth_strings_1: 51, synth_strings_2: 52, choir_aahs: 53, voice_oohs: 54, synth_voice: 55, orchestra_hit: 56, trumpet: 57, trombone: 58, tuba: 59, muted_trumpet: 60, french_horn: 61, brass_section: 62, synth_brass_1: 63, synth_brass_2: 64, soprano_sax: 65, alto_sax: 66, tenor_sax: 67, baritone_sax: 68, oboe: 69, english_horn: 70, bassoon: 71, clarinet: 72, piccolo: 73, flute: 74, recorder: 75, pan_flute: 76, blown_bottle: 77, shakuhachi: 78, whistle: 79, ocarina: 80 };
-
-    const generateAndDownloadMidi = (midiData) => {
-        if (!window.MidiWriter) return showError('MIDI library not available.');
-        try {
-            const track = new window.MidiWriter.Track();
-            track.addEvent(new window.MidiWriter.ProgramChangeEvent({ instrument: instrumentNameToProgramNumber[midiData.instrument] || 1 }));
-            midiData.notes.forEach(note => track.addEvent(new window.MidiWriter.NoteEvent(note)));
-            const write = new window.MidiWriter.Writer([track]);
-            const link = document.createElement('a');
-            link.href = write.dataUri();
-            link.download = 'composition.mid';
-            link.click();
-        } catch (err) {
-            console.error("Error generating MIDI file:", err);
-            showError("Failed to generate MIDI file.");
-        }
-    };
-    
-    // --- TOOL CALL HELPERS ---
-    const getToolActionText = (call) => {
-        switch(call.name) {
-            case 'play_on_youtube': return `Searching YouTube for "${call.args.query}"...`;
-            case 'search_google': return `Searching Google for "${call.args.query}"...`;
-            case 'create_google_doc': return 'Opening a new Google Doc...';
-            case 'create_google_sheet': return 'Opening a new Google Sheet...';
-            case 'create_google_slides': return 'Opening a new Google Slides presentation...';
-            case 'create_calendar_event': return 'Opening Google Calendar to create a new event...';
-            default: return `Performing an unknown action: ${call.name}`;
-        }
-    };
-
-    const executeToolCall = (call) => {
-        const { name, args } = call;
-        switch(name) {
-            case 'play_on_youtube': window.open(`https://www.youtube.com/results?search_query=${encodeURIComponent(args.query)}`, '_blank'); break;
-            case 'search_google': window.open(`https://www.google.com/search?q=${encodeURIComponent(args.query)}`, '_blank'); break;
-            case 'create_google_doc': window.open('https://docs.new', '_blank'); break;
-            case 'create_google_sheet': window.open('https://sheets.new', '_blank'); break;
-            case 'create_google_slides': window.open('https://slides.new', '_blank'); break;
-            case 'create_calendar_event': window.open('https://cal.new', '_blank'); break;
-            default: console.warn(`Unknown tool call: ${name}`);
-        }
-    };
+    });
 
     // --- UTILITIES ---
-    const scrollToBottom = () => chatContainer.scrollTop = chatContainer.scrollHeight;
-    const showError = (msg) => { errorMessageElement.textContent = msg || ''; errorMessageElement.style.display = msg ? 'block' : 'none'; };
-    const resizeTextarea = () => { messageInput.style.height = 'auto'; messageInput.style.height = `${Math.min(messageInput.scrollHeight, 200)}px`; };
     
-    messageInput.addEventListener('input', () => { resizeTextarea(); sendButton.disabled = !messageInput.value.trim() || isLoading; });
+    const scrollToBottom = () => {
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+    };
+    
+    const showError = (message) => {
+        errorMessageElement.textContent = message || '';
+        errorMessageElement.style.display = message ? 'block' : 'none';
+    };
+    
+    const resizeTextarea = () => {
+        messageInput.style.height = 'auto';
+        const newHeight = Math.min(messageInput.scrollHeight, 160); // Max height 160px
+        messageInput.style.height = `${newHeight}px`;
+    };
+    
+    messageInput.addEventListener('input', () => {
+        resizeTextarea();
+        sendButton.disabled = !messageInput.value.trim() || isLoading;
+    });
+
     messageInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); chatForm.dispatchEvent(new Event('submit', { cancelable: true })); }
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            chatForm.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+        }
     });
     
     init();
 });
-
