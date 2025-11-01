@@ -2,13 +2,13 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/x-icon" href="/imagres.ico" />
+    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='imagres.ico') }}" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>pacure ai</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <script src="https://cdn.jsdelivr.net/npm/midi-writer-js@2.1.4/build/MidiWriter.min.js"></script>
 <script type="importmap">
 {
@@ -22,7 +22,6 @@
   }
 }
 </script>
-<link rel="stylesheet" href="/index.css">
 </head>
 <body>
     <!-- Auth Loading View -->
@@ -90,7 +89,6 @@
         </div>
     </div>
 
-    <script src="script.js"></script>
-<script type="module" src="/index.tsx"></script>
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>
 </html>
