@@ -1,4 +1,3 @@
-
 document.addEventListener('DOMContentLoaded', () => {
     // --- STATE ---
     let user = null;
@@ -18,11 +17,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const sendButton = document.getElementById('send-button');
     const micButton = document.getElementById('mic-button');
     const errorMessageElement = document.getElementById('error-message');
-    
-    const sendIconSVG = sendButton.innerHTML;
 
     // --- INITIALIZATION ---
-
     const init = async () => {
         showView('auth-loader');
         setupSpeechRecognition();
@@ -30,104 +26,96 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // --- AUTHENTICATION ---
-    
     const checkSession = async () => {
         try {
             const response = await fetch('/api/session');
             if (response.ok) {
-                const userData = await response.json();
-                user = userData;
-                renderLoggedInState(user);
+                user = await response.json();
+                renderLoggedInState();
                 showView('app');
-                addMessageToChat('assistant', `Welcome back, ${user.name.split(' ')[0]}! Let's create some music.`);
             } else {
                 user = null;
                 renderLoggedOutState();
                 showView('logged-out');
-                addMessageToChat('assistant', `Hello! Please sign in to begin creating music.`);
             }
         } catch (err) {
             console.error("Failed to check session:", err);
-            showError("Could not connect to the server to check your session.");
+            showError("Could not connect to the server.");
             renderLoggedOutState();
             showView('logged-out');
         }
     };
 
-    const renderLoggedInState = (userData) => {
-        userInfoContainer.innerHTML = `
-            <img src="${userData.picture}" alt="${userData.name}" class="user-avatar" />
-            <span class="user-name">${userData.name}</span>
-            <button id="logout-button" class="logout-button">Sign Out</button>
-        `;
-        document.getElementById('logout-button').addEventListener('click', () => {
-            window.location.href = '/logout';
-        });
-        messageInput.disabled = false;
-        messageInput.placeholder = "Describe the music you want to create...";
-        sendButton.disabled = true;
-        micButton.disabled = false;
-    };
-
-    const renderLoggedOutState = () => {
-        userInfoContainer.innerHTML = '';
-        messageInput.disabled = true;
-        messageInput.placeholder = "Please sign in to start composing...";
-        sendButton.disabled = true;
-        micButton.disabled = true;
-    };
-    
     loginButton.addEventListener('click', () => {
         window.location.href = '/login';
     });
 
-    // --- VIEW MANAGEMENT ---
+    const renderLoggedInState = () => {
+        userInfoContainer.innerHTML = `
+            <img src="${user.picture}" alt="User avatar" class="user-avatar" />
+            <div class="user-details">
+                <span class="user-name">${user.name}</span>
+                <button id="logout-button" class="logout-button">Sign Out</button>
+            </div>
+        `;
+        document.getElementById('logout-button').addEventListener('click', () => window.location.href = '/logout');
+        renderWelcomeScreen();
+    };
+
+    const renderLoggedOutState = () => {
+        userInfoContainer.innerHTML = '';
+        chatContainer.innerHTML = '';
+    };
     
+    // --- VIEW MANAGEMENT ---
     const showView = (viewName) => {
-        authLoaderView.classList.toggle('visible', viewName === 'auth-loader');
-        loggedOutView.classList.toggle('visible', viewName === 'logged-out');
-        appView.classList.toggle('visible', viewName === 'app');
+        document.querySelectorAll('.view').forEach(v => v.classList.remove('visible'));
+        document.getElementById(`${viewName}-view`).classList.add('visible');
+    };
+
+    const renderWelcomeScreen = () => {
+        chatContainer.innerHTML = `
+            <div class="welcome-screen">
+                <h1 class="welcome-title">Hello, ${user.name.split(' ')[0]}</h1>
+                <h2 class="welcome-subtitle">How can I help you today?</h2>
+            </div>
+        `;
     };
 
     // --- CHAT LOGIC ---
-
     const handleSubmit = async (e) => {
         e.preventDefault();
         const prompt = messageInput.value.trim();
         if (!prompt || isLoading || !user) return;
 
-        // Clear initial message if it exists
-        if(chatContainer.children.length === 1 && chatContainer.querySelector('.message-wrapper')) {
-             chatContainer.innerHTML = '';
+        if (chatContainer.querySelector('.welcome-screen')) {
+            chatContainer.innerHTML = '';
         }
        
-        addMessageToChat('user', prompt);
+        addMessageToChat('user', { text: prompt });
         messageInput.value = '';
         resizeTextarea();
         setLoading(true);
         showError(null);
 
         try {
-            const result = await generateMusicComposition(prompt);
-            const content = `Here is a composition based on your request. I've used the ${result.instrument.replace(/_/g, ' ')}. You can download the MIDI file below.`;
-            addMessageToChat('assistant', content, result);
-        } catch (err) {
-            const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
-            if (errorMessage === 'Unauthorized') {
-                addMessageToChat('assistant', 'Your session has expired. Please sign in again to continue creating.');
-                showError("Your session has expired. Please sign in again.");
-                user = null;
-                setTimeout(() => {
-                    renderLoggedOutState();
-                    showView('logged-out');
-                     // Clear chat and show logged out message
-                    chatContainer.innerHTML = '';
-                    addMessageToChat('assistant', `Hello! Please sign in to begin creating music.`);
-                }, 3000);
-            } else {
-                showError(`Sorry, I couldn't generate the music. ${errorMessage}`);
-                addMessageToChat('assistant', 'Sorry, I had trouble generating the music. Please try a different prompt.');
+            const response = await fetch('/api/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt }),
+            });
+
+            if (!response.ok) {
+                if(response.status === 401) throw new Error('Unauthorized');
+                const errData = await response.json();
+                throw new Error(errData.error || 'Server returned an error.');
             }
+            
+            const result = await response.json();
+            addMessageToChat('assistant', result);
+
+        } catch (err) {
+            handleApiError(err);
         } finally {
             setLoading(false);
         }
@@ -135,196 +123,173 @@ document.addEventListener('DOMContentLoaded', () => {
     
     chatForm.addEventListener('submit', handleSubmit);
 
-    const addMessageToChat = (role, content, midiData = null) => {
+    const addMessageToChat = (role, data) => {
         const isUser = role === 'user';
         const messageWrapper = document.createElement('div');
-        messageWrapper.className = `message-wrapper ${isUser ? 'user' : 'assistant'}`;
+        messageWrapper.className = `message-wrapper ${role}`;
 
-        let messageHTML = '';
-        if (!isUser) {
-            messageHTML += `
-                <div class="avatar-container">
-                    <img src="/imagres.ico" alt="Assistant" />
-                </div>
-            `;
-        }
+        const avatarSrc = isUser ? user.picture : '/imagres.ico';
+        const senderName = isUser ? user.name : 'pacure ai';
 
-        messageHTML += `<div class="message-content ${isUser ? 'user' : 'assistant'}">
-            <p>${content.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</p>
+        messageWrapper.innerHTML = `
+            <div class="avatar-container">
+                <img src="${avatarSrc}" alt="${senderName} avatar" />
+            </div>
+            <div class="message-content">
+                <p class="message-sender">${senderName}</p>
+                ${generateMessageContent(data)}
+            </div>
         `;
 
-        if (midiData) {
-            const midiString = JSON.stringify(midiData).replace(/'/g, "&apos;");
-            messageHTML += `
-                <div class="midi-card">
-                    <h3>Generated Composition</h3>
-                    <div class="midi-details">
-                        <p>Instrument: <span>${midiData.instrument.replace(/_/g, ' ')}</span></p>
-                        <button class="download-button" data-midi='${midiString}'>
-                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" x2="12" y1="15" y2="3"></line></svg>
-                            <span>Download</span>
+        chatContainer.appendChild(messageWrapper);
+        attachEventListeners(messageWrapper);
+        scrollToBottom();
+    };
+
+    const generateMessageContent = (data) => {
+        if (data.text) {
+            return `<p>${data.text.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</p>`;
+        }
+        if (data.midiData) {
+            const midiString = JSON.stringify(data.midiData).replace(/'/g, "&apos;");
+            return `
+                <p>Here is the composition you requested. I've used the ${data.midiData.instrument.replace(/_/g, ' ')}.</p>
+                <div class="card">
+                    <div class="card-title"><span class="material-symbols-outlined">music_note</span>Composition</div>
+                    <div class="card-content">
+                        <span class="card-text">${data.midiData.instrument.replace(/_/g, ' ')}</span>
+                        <button class="card-button download-button" data-midi='${midiString}'>
+                            <span class="material-symbols-outlined">download</span> Download
                         </button>
                     </div>
                 </div>
             `;
         }
-
-        messageHTML += `</div>`;
-        messageWrapper.innerHTML = messageHTML;
-        chatContainer.appendChild(messageWrapper);
-        scrollToBottom();
+        if (data.tool_calls) {
+            return data.tool_calls.map(call => {
+                executeToolCall(call);
+                return `<p>Performing action: ${call.name.replace(/_/g, ' ')} with query "${call.args.query}"...</p>`;
+            }).join('');
+        }
+        return '<p>Sorry, I received an empty response.</p>';
     };
     
+    const executeToolCall = (call) => {
+        const { name, args } = call;
+        switch(name) {
+            case 'play_on_youtube':
+                window.open(`https://www.youtube.com/results?search_query=${encodeURIComponent(args.query)}`, '_blank');
+                break;
+            case 'search_google':
+                window.open(`https://www.google.com/search?q=${encodeURIComponent(args.query)}`, '_blank');
+                break;
+            default:
+                console.warn(`Unknown tool call: ${name}`);
+        }
+    };
+
     const setLoading = (state) => {
         isLoading = state;
         sendButton.disabled = isLoading || !messageInput.value.trim();
         micButton.disabled = isLoading;
         messageInput.disabled = isLoading;
         
+        const existingLoader = document.getElementById('loading-indicator');
+        if(existingLoader) existingLoader.remove();
+        
         if (isLoading) {
-            const existingLoader = document.getElementById('loading-indicator');
-            if (existingLoader) existingLoader.remove();
-            
             const loaderDiv = document.createElement('div');
             loaderDiv.id = 'loading-indicator';
             loaderDiv.className = 'message-wrapper assistant';
             loaderDiv.innerHTML = `
-                 <div class="avatar-container">
-                    <img src="/imagres.ico" alt="Assistant" />
-                </div>
-                <div class="loading-dots">
-                    <div></div><div></div><div></div>
+                <div class="avatar-container"><img src="/imagres.ico" alt="Assistant avatar" /></div>
+                <div class="message-content">
+                    <p class="message-sender">pacure ai</p>
+                    <div class="loading-dots"><div></div><div></div><div></div></div>
                 </div>
             `;
             chatContainer.appendChild(loaderDiv);
             scrollToBottom();
-            sendButton.innerHTML = `<div class="loader-spinner-small"></div>`;
+        }
+    };
+    
+    const handleApiError = (err) => {
+        const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
+        if (errorMessage === 'Unauthorized') {
+            addMessageToChat('assistant', { text: 'Your session has expired. Please sign in again.' });
+            showError("Your session has expired. Redirecting to login...");
+            setTimeout(() => window.location.href = '/', 3000);
         } else {
-            const loader = document.getElementById('loading-indicator');
-            if (loader) loader.remove();
-            sendButton.innerHTML = sendIconSVG;
+            showError(`Error: ${errorMessage}`);
+            addMessageToChat('assistant', { text: `Sorry, I ran into a problem: ${errorMessage}` });
         }
     };
 
-    // --- API & SERVICES ---
-    
-    async function generateMusicComposition(prompt) {
-        const response = await fetch('/api/compose', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ prompt }),
-        });
+    // --- MIDI & Event Handlers ---
+    const instrumentNameToProgramNumber = { acoustic_grand_piano: 1, bright_acoustic_piano: 2, electric_grand_piano: 3, honky_tonk_piano: 4, electric_piano_1: 5, electric_piano_2: 6, harpsichord: 7, clavi: 8, celesta: 9, glockenspiel: 10, music_box: 11, vibraphone: 12, marimba: 13, xylophone: 14, tubular_bells: 15, dulcimer: 16, drawbar_organ: 17, percussive_organ: 18, rock_organ: 19, church_organ: 20, reed_organ: 21, accordion: 22, harmonica: 23, tango_accordion: 24, acoustic_guitar_nylon: 25, acoustic_guitar_steel: 26, electric_guitar_jazz: 27, electric_guitar_clean: 28, electric_guitar_muted: 29, overdriven_guitar: 30, distortion_guitar: 31, guitar_harmonics: 32, acoustic_bass: 33, electric_bass_finger: 34, electric_bass_pick: 35, fretless_bass: 36, slap_bass_1: 37, slap_bass_2: 38, synth_bass_1: 39, synth_bass_2: 40, violin: 41, viola: 42, cello: 43, contrabass: 44, tremolo_strings: 45, pizzicato_strings: 46, orchestral_harp: 47, timpani: 48, string_ensemble_1: 49, string_ensemble_2: 50, synth_strings_1: 51, synth_strings_2: 52, choir_aahs: 53, voice_oohs: 54, synth_voice: 55, orchestra_hit: 56, trumpet: 57, trombone: 58, tuba: 59, muted_trumpet: 60, french_horn: 61, brass_section: 62, synth_brass_1: 63, synth_brass_2: 64, soprano_sax: 65, alto_sax: 66, tenor_sax: 67, baritone_sax: 68, oboe: 69, english_horn: 70, bassoon: 71, clarinet: 72, piccolo: 73, flute: 74, recorder: 75, pan_flute: 76, blown_bottle: 77, shakuhachi: 78, whistle: 79, ocarina: 80 };
 
-        if (response.status === 401) throw new Error('Unauthorized');
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || 'The server returned an error.');
-        }
-        return await response.json();
-    }
-    
-    const instrumentNameToProgramNumber = {
-      acoustic_grand_piano: 1, bright_acoustic_piano: 2, electric_grand_piano: 3, honky_tonk_piano: 4, electric_piano_1: 5, electric_piano_2: 6, harpsichord: 7, clavi: 8, celesta: 9, glockenspiel: 10, music_box: 11, vibraphone: 12, marimba: 13, xylophone: 14, tubular_bells: 15, dulcimer: 16, drawbar_organ: 17, percussive_organ: 18, rock_organ: 19, church_organ: 20, reed_organ: 21, accordion: 22, harmonica: 23, tango_accordion: 24, acoustic_guitar_nylon: 25, acoustic_guitar_steel: 26, electric_guitar_jazz: 27, electric_guitar_clean: 28, electric_guitar_muted: 29, overdriven_guitar: 30, distortion_guitar: 31, guitar_harmonics: 32, acoustic_bass: 33, electric_bass_finger: 34, electric_bass_pick: 35, fretless_bass: 36, slap_bass_1: 37, slap_bass_2: 38, synth_bass_1: 39, synth_bass_2: 40, violin: 41, viola: 42, cello: 43, contrabass: 44, tremolo_strings: 45, pizzicato_strings: 46, orchestral_harp: 47, timpani: 48, string_ensemble_1: 49, string_ensemble_2: 50, synth_strings_1: 51, synth_strings_2: 52, choir_aahs: 53, voice_oohs: 54, synth_voice: 55, orchestra_hit: 56, trumpet: 57, trombone: 58, tuba: 59, muted_trumpet: 60, french_horn: 61, brass_section: 62, synth_brass_1: 63, synth_brass_2: 64, soprano_sax: 65, alto_sax: 66, tenor_sax: 67, baritone_sax: 68, oboe: 69, english_horn: 70, bassoon: 71, clarinet: 72, piccolo: 73, flute: 74, recorder: 75, pan_flute: 76, blown_bottle: 77, shakuhachi: 78, whistle: 79, ocarina: 80,
-    };
-
-    const generateAndDownloadMidi = (midiData, fileName = 'composition.mid') => {
-        if (!window.MidiWriter) {
-            console.error('midi-writer-js is not loaded.');
-            alert('MIDI library not available. Please refresh the page.');
-            return;
-        }
-        
+    const generateAndDownloadMidi = (midiData) => {
+        if (!window.MidiWriter) return showError('MIDI library not available.');
         const track = new window.MidiWriter.Track();
-        const programNumber = instrumentNameToProgramNumber[midiData.instrument] || 1;
-        track.addEvent(new window.MidiWriter.ProgramChangeEvent({ instrument: programNumber }));
-
-        midiData.notes.forEach(note => {
-            track.addEvent(new window.MidiWriter.NoteEvent({
-                pitch: note.pitch,
-                duration: note.duration,
-            }));
-        });
-
+        track.addEvent(new window.MidiWriter.ProgramChangeEvent({ instrument: instrumentNameToProgramNumber[midiData.instrument] || 1 }));
+        midiData.notes.forEach(note => track.addEvent(new window.MidiWriter.NoteEvent(note)));
         const write = new window.MidiWriter.Writer([track]);
-        const dataUri = write.dataUri();
-        
         const link = document.createElement('a');
-        link.href = dataUri;
-        link.download = fileName;
-        document.body.appendChild(link);
+        link.href = write.dataUri();
+        link.download = 'composition.mid';
         link.click();
-        document.body.removeChild(link);
     };
     
-    chatContainer.addEventListener('click', (e) => {
-        const downloadButton = e.target.closest('.download-button');
-        if (downloadButton && downloadButton.dataset.midi) {
-            try {
-                const midiData = JSON.parse(downloadButton.dataset.midi);
-                generateAndDownloadMidi(midiData);
-            } catch(err) {
-                console.error("Failed to parse MIDI data:", err);
-                showError("Could not download MIDI file due to invalid data.");
-            }
+    const attachEventListeners = (element) => {
+        const downloadButton = element.querySelector('.download-button');
+        if (downloadButton) {
+            downloadButton.addEventListener('click', () => {
+                try {
+                    const midiData = JSON.parse(downloadButton.dataset.midi);
+                    generateAndDownloadMidi(midiData);
+                } catch(err) {
+                    showError("Could not download MIDI: Invalid data.");
+                }
+            });
         }
-    });
+    };
 
     // --- SPEECH RECOGNITION ---
-    
     const setupSpeechRecognition = () => {
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        if (!SpeechRecognition) {
-            micButton.style.display = 'none';
-            return;
-        }
-
+        if (!SpeechRecognition) { micButton.style.display = 'none'; return; }
         recognition = new SpeechRecognition();
-        recognition.continuous = false;
-        recognition.interimResults = false;
-        recognition.lang = 'en-US';
-
-        recognition.onresult = (event) => {
-            const transcript = event.results[0][0].transcript;
-            messageInput.value = transcript;
-            messageInput.dispatchEvent(new Event('input')); // Trigger input event to resize textarea and enable send button
+        recognition.continuous = false; recognition.interimResults = false; recognition.lang = 'en-US';
+        recognition.onresult = (e) => {
+            messageInput.value = e.results[0][0].transcript;
+            messageInput.dispatchEvent(new Event('input'));
         };
-        recognition.onerror = (event) => console.error('Speech recognition error:', event.error);
+        recognition.onerror = (e) => console.error('Speech recognition error:', e.error);
         recognition.onend = () => {
-            isListening = false;
-            micButton.classList.remove('listening');
-            if (user) {
-                messageInput.placeholder = "Describe the music you want to create...";
-            }
+            isListening = false; micButton.classList.remove('listening');
+            messageInput.placeholder = "Describe what you want to do...";
         };
     };
 
     micButton.addEventListener('click', () => {
         if (isLoading || !recognition) return;
-        if (isListening) {
-            recognition.stop();
-        } else {
-            recognition.start();
-            isListening = true;
+        if (isListening) { recognition.stop(); } 
+        else {
+            recognition.start(); isListening = true;
             micButton.classList.add('listening');
             messageInput.placeholder = "Listening...";
         }
     });
 
     // --- UTILITIES ---
-    
-    const scrollToBottom = () => {
-        chatContainer.scrollTop = chatContainer.scrollHeight;
+    const scrollToBottom = () => chatContainer.scrollTop = chatContainer.scrollHeight;
+    const showError = (msg) => {
+        errorMessageElement.textContent = msg || '';
+        errorMessageElement.style.display = msg ? 'block' : 'none';
     };
-    
-    const showError = (message) => {
-        errorMessageElement.textContent = message || '';
-        errorMessageElement.style.display = message ? 'block' : 'none';
-    };
-    
     const resizeTextarea = () => {
         messageInput.style.height = 'auto';
-        const newHeight = Math.min(messageInput.scrollHeight, 160); // Max height 160px
-        messageInput.style.height = `${newHeight}px`;
+        messageInput.style.height = `${Math.min(messageInput.scrollHeight, 200)}px`;
     };
     
     messageInput.addEventListener('input', () => {
@@ -335,7 +300,7 @@ document.addEventListener('DOMContentLoaded', () => {
     messageInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
-            chatForm.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+            chatForm.dispatchEvent(new Event('submit', { cancelable: true }));
         }
     });
     
