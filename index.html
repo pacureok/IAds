@@ -39,9 +39,25 @@
                 <span class="material-symbols-outlined">add</span>
                 New Chat
             </button>
+            <div class="sidebar-modes">
+                <button class="mode-button active" data-mode="gemini">
+                    <span class="material-symbols-outlined">auto_awesome</span> Chat AI
+                </button>
+                <button class="mode-button" data-mode="deep-search">
+                    <span class="material-symbols-outlined">travel_explore</span> Búsqueda Profunda
+                </button>
+                <button class="mode-button" data-mode="summarize">
+                    <span class="material-symbols-outlined">summarize</span> Resumen de Páginas
+                </button>
+            </div>
             <nav class="sidebar-nav">
                 <!-- Future history items here -->
             </nav>
+            <div class="sidebar-features">
+                 <button id="chat-life-button" class="feature-button">
+                    <span class="material-symbols-outlined">podcasts</span> Chat Life
+                </button>
+            </div>
             <div id="user-info" class="user-info">
                 <!-- User profile injected by JS -->
             </div>
@@ -54,7 +70,7 @@
                  <p id="error-message" class="error-message"></p>
                 <div class="chat-input-wrapper">
                     <form id="chat-form" class="chat-form">
-                        <textarea id="message-input" placeholder="Describe what you want to do..." class="message-input" rows="1"></textarea>
+                        <textarea id="message-input" placeholder="Enter a prompt here" class="message-input" rows="1"></textarea>
                         <div class="form-actions">
                             <button type="button" id="mic-button" class="icon-button" aria-label="Use microphone">
                                 <span class="material-symbols-outlined">mic</span>
@@ -65,7 +81,13 @@
                         </div>
                     </form>
                 </div>
-                <p class="footer-notice">pacure ai may display inaccurate info. Your conversations are processed by developers to improve the service.</p>
+                <div class="footer-bottom">
+                    <div id="hotword-status" class="hotword-status">
+                        <span class="material-symbols-outlined">mic_off</span>
+                        <span>Listening for "Hey AI"...</span>
+                    </div>
+                    <p class="footer-notice">pacure ai may display inaccurate info. Your conversations are processed by developers to improve the service.</p>
+                </div>
             </footer>
         </main>
     </div>
