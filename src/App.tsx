@@ -5,15 +5,6 @@ import ChatMessage from './components/ChatMessage';
 import { generateMusicComposition } from './services/geminiService';
 import { MusicIcon } from './components/icons/MusicIcon';
 import { GoogleIcon } from './components/icons/GoogleIcon';
-import { WarningIcon } from './components/icons/WarningIcon';
-
-declare global {
-  interface Window {
-    google: any;
-  }
-}
-
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 
 const App: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -22,110 +13,52 @@ const App: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [user, setUser] = useState<UserProfile | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
-  const [configError, setConfigError] = useState<string | null>(null);
 
   const chatContainerRef = useRef<HTMLDivElement>(null);
 
-  const handleCredentialResponse = useCallback((response: any) => {
-    try {
-      const payload = JSON.parse(atob(response.credential.split('.')[1]));
-      const userProfile: UserProfile = {
-        id: payload.sub,
-        name: payload.name,
-        email: payload.email,
-        picture: payload.picture,
-      };
-      setUser(userProfile);
-      sessionStorage.setItem('userProfile', JSON.stringify(userProfile));
-       setMessages([
-        {
-          id: 'initial',
-          role: MessageRole.ASSISTANT,
-          content: `Hello ${userProfile.name.split(' ')[0]}! I'm your AI Music Composer. Give me a starting note, a genre, or a mood, and I'll create a MIDI composition for you.`,
-        },
-      ]);
-    } catch (e) {
-      console.error("Failed to decode credential response:", e);
-      setError("There was an issue signing you in.");
-    }
-  }, []);
+  const handleLogout = () => {
+    window.location.href = '/logout';
+  };
+  
+  const handleLogin = () => {
+    window.location.href = '/login';
+  }
 
-  const handleLogout = useCallback(() => {
-    setUser(null);
-    sessionStorage.removeItem('userProfile');
-    if (window.google) {
-      window.google.accounts.id.disableAutoSelect();
-    }
-    setMessages([
-      {
-        id: 'initial-logged-out',
-        role: MessageRole.ASSISTANT,
-        content: `You've been signed out. Sign in again to continue creating music.`,
-      },
-    ]);
-  }, []);
-
-  // Initialize Google Auth and check for stored session
+  // Check for active session on component mount
   useEffect(() => {
-    if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_ID.endsWith('.apps.googleusercontent.com')) {
-      setConfigError(
-        'This error indicates the Client ID is missing, invalid, or a placeholder.\n\n' +
-        'Please follow these steps:\n' +
-        '1. Go to the Google Cloud Console and select your project.\n' +
-        '2. Navigate to "APIs & Services" > "Credentials".\n' +
-        '3. Create an "OAuth 2.0 Client ID" for a "Web application".\n' +
-        '4. Add your app\'s URL to the "Authorized JavaScript origins". For local development, this is often `http://localhost:5173` or the URL provided by your development server.\n' +
-        '5. Copy the generated Client ID.\n' +
-        '6. Set this ID as the `VITE_GOOGLE_CLIENT_ID` environment variable in your project setup.'
-      );
-      setIsAuthLoading(false);
-      return;
-    }
-
-    const storedUser = sessionStorage.getItem('userProfile');
-    if (storedUser) {
-      const parsedUser = JSON.parse(storedUser);
-      setUser(parsedUser);
-      setMessages([
-        {
-          id: 'initial',
-          role: MessageRole.ASSISTANT,
-          content: `Welcome back, ${parsedUser.name.split(' ')[0]}! Let's create some music.`,
-        },
-      ]);
-    } else {
-        setMessages([
-        {
-            id: 'initial-logged-out',
-            role: MessageRole.ASSISTANT,
-            content: `Hello! Please sign in to begin creating music.`,
-        },
-        ]);
-    }
-
-    const checkGoogle = () => {
-      if (window.google && window.google.accounts) {
-        window.google.accounts.id.initialize({
-          client_id: GOOGLE_CLIENT_ID,
-          callback: handleCredentialResponse,
-          use_fedcm_for_prompt: false,
-        });
+    const checkSession = async () => {
+      try {
+        const response = await fetch('/api/session');
+        if (response.ok) {
+          const userData: UserProfile = await response.json();
+          setUser(userData);
+          setMessages([
+            {
+              id: 'initial',
+              role: MessageRole.ASSISTANT,
+              content: `Welcome back, ${userData.name.split(' ')[0]}! Let's create some music.`,
+            },
+          ]);
+        } else {
+          setUser(null);
+          setMessages([
+            {
+              id: 'initial-logged-out',
+              role: MessageRole.ASSISTANT,
+              content: `Hello! Please sign in to begin creating music.`,
+            },
+          ]);
+        }
+      } catch (err) {
+        console.error("Failed to check session:", err);
+        setError("Could not connect to the server to check your session.");
+        setUser(null);
+      } finally {
         setIsAuthLoading(false);
-      } else {
-        setTimeout(checkGoogle, 100);
       }
     };
-    checkGoogle();
-  }, [handleCredentialResponse]);
-  
-  const handleLoginClick = () => {
-      if (window.google && window.google.accounts) {
-          window.google.accounts.id.prompt();
-      } else {
-          setError("Google Sign-In is not ready yet. Please try again in a moment.");
-      }
-  };
-
+    checkSession();
+  }, []);
 
   useEffect(() => {
     if (chatContainerRef.current) {
@@ -136,7 +69,7 @@ const App: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || isLoading || !user) return;
-    
+
     if (messages.length === 1 && messages[0].id.startsWith('initial')) {
         setMessages([]);
     }
@@ -162,47 +95,31 @@ const App: React.FC = () => {
       };
       setMessages((prev) => [...prev, assistantMessage]);
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
-      setError(`Sorry, I couldn't generate the music. ${errorMessage}`);
-      const errorResponseMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: MessageRole.ASSISTANT,
-        content: `Sorry, I had trouble generating the music. Please try a different prompt.`,
-      };
-      setMessages((prev) => [...prev, errorResponseMessage]);
+      if ((err as Error).message === 'Unauthorized') {
+        // Session expired or invalid, force logout
+        setError("Your session has expired. Please sign in again.");
+        setUser(null);
+         setMessages([
+            {
+              id: 'session-expired',
+              role: MessageRole.ASSISTANT,
+              content: `Your session has expired. Please sign in again to continue creating.`,
+            },
+          ]);
+      } else {
+        const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
+        setError(`Sorry, I couldn't generate the music. ${errorMessage}`);
+        const errorResponseMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          role: MessageRole.ASSISTANT,
+          content: `Sorry, I had trouble generating the music. Please try a different prompt.`,
+        };
+        setMessages((prev) => [...prev, errorResponseMessage]);
+      }
     } finally {
       setIsLoading(false);
     }
   };
-
-  if (configError) {
-    return (
-      <div className="flex h-screen w-screen items-center justify-center bg-gray-900 text-white p-6">
-        <div className="w-full max-w-2xl text-left bg-gray-800 p-8 rounded-lg border border-yellow-500/50 shadow-2xl">
-          <div className="flex items-center mb-4">
-            <div className="w-8 h-8 mr-3 text-yellow-400">
-                <WarningIcon />
-            </div>
-            <h1 className="text-2xl font-bold text-yellow-400">Configuration Required</h1>
-          </div>
-          <p className="text-gray-300 mb-4">
-            The Google Client ID for this application is missing or invalid. Please configure it to enable Google Sign-In.
-          </p>
-          <div className="bg-gray-900 p-4 rounded-md text-gray-400 text-sm">
-            <pre className="whitespace-pre-wrap font-mono">{configError}</pre>
-          </div>
-          <a
-            href="https://console.cloud.google.com/apis/credentials"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mt-6 inline-block px-6 py-2 font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-500 transition-colors"
-          >
-            Open Google Cloud Credentials
-          </a>
-        </div>
-      </div>
-    );
-  }
   
   if (isAuthLoading) {
     return (
@@ -250,7 +167,7 @@ const App: React.FC = () => {
     );
   }
 
-  // Logged out view (ChatGPT Style)
+  // Logged out view
   return (
     <div className="flex h-screen w-screen items-center justify-center bg-gray-900 text-white p-4">
         <div className="w-full max-w-sm text-center">
@@ -260,7 +177,7 @@ const App: React.FC = () => {
             <h1 className="text-2xl font-bold mb-4">Welcome to Gemini MIDI Composer</h1>
             
             <button 
-                onClick={handleLoginClick}
+                onClick={handleLogin}
                 className="w-full flex items-center justify-center gap-3 px-4 py-3 mb-4 font-semibold text-gray-800 bg-white rounded-lg hover:bg-gray-200 transition-colors shadow-md"
             >
                 <GoogleIcon />
