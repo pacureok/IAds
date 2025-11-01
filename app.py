@@ -6,7 +6,8 @@ import google.generativeai as genai
 import requests
 
 # --- Configuración ---
-app = Flask(__name__, static_folder='.', static_url_path='')
+# Le decimos a Flask que busque el index.html en el directorio raíz ('.')
+app = Flask(__name__, static_folder='.', static_url_path='', template_folder='.')
 # La SECRET_KEY se obtiene de las variables de entorno de Render
 app.secret_key = os.environ.get("SECRET_KEY") 
 
@@ -45,13 +46,10 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 genai.configure(api_key=GEMINI_API_KEY)
 
 # --- Definición del Modelo Gemini ---
-instrument_names = [ "acoustic_grand_piano", "bright_acoustic_piano", "electric_grand_piano", "honky_tonk_piano", "electric_piano_1", "electric_piano_2", "harpsichord", "clavi", "celesta", "glockenspiel", "music_box", "vibraphone", "marimba", "xylophone", "tubular_bells", "dulcimer", "drawbar_organ", "percussive_organ", "rock_organ", "church_organ", "reed_organ", "accordion", "harmonica", "tango_accordion", "acoustic_guitar_nylon", "acoustic_guitar_steel", "electric_guitar_jazz", "electric_guitar_clean", "electric_guitar_muted", "overdriven_guitar", "distortion_guitar", "guitar_harmonics", "acoustic_bass", "electric_bass_finger", "electric_bass_pick", "fretless_bass", "slap_bass_1", "slap_bass_2", "synth_bass_1", "synth_bass_2", "violin", "viola", "cello", "contrabass", "tremolo_strings", "pizzicato_strings", "orchestral_harp", "timpani", "string_ensemble_1", "string_ensemble_2", "synth_strings_1", "synth_strings_2", "choir_aahs", "voice_oohs", "synth_voice", "orchestra_hit", "trumpet", "trombone", "tuba", "muted_trumpet", "french_horn", "brass_section", "synth_brass_1", "synth_brass_2", "soprano_sax", "alto_sax", "tenor_sax", "baritone_sax", "oboe", "english_horn", "bassoon", "clarinet", "piccolo", "flute", "recorder", "pan_flute", "blown_bottle", "shakuhachi", "whistle", "ocarina" ]
-valid_instruments = ", ".join(instrument_names)
-
 system_instruction = f"""You are an expert MIDI music composer. Your task is to generate a musical composition based on the user's prompt.
 You must return a single JSON object that strictly adheres to the provided schema.
 The JSON object must contain two keys: "instrument" and "notes".
-The "instrument" must be a valid General MIDI instrument name from the allowed list.
+The "instrument" must be a valid General MIDI instrument name.
 The "notes" array must contain a sequence of note objects, each with a "pitch" and a "duration".
 - Pitch should be in scientific pitch notation (e.g., 'C4', 'F#5'). Use 'rest' for silence.
 - Duration should be a string representing the note length (e.g., '1' for whole, '2' for half, '4' for quarter, '8' for eighth). Use 'd' for dotted notes (e.g., 'd4').
@@ -86,7 +84,8 @@ def login():
 @app.route('/callback')
 def callback():
     state = session.get('state')
-    if not state:
+    # Compara el estado para prevenir ataques CSRF
+    if not state or state != request.args.get('state'):
         return "Error: Invalid state.", 400
         
     flow = Flow.from_client_secrets_file(
@@ -134,8 +133,9 @@ def api_compose():
 
     try:
         response = model.generate_content(prompt)
-        result_json = json.loads(response.text)
-        return jsonify(result_json)
+        # No es necesario hacer json.loads si la respuesta ya es JSON
+        result_json = response.text
+        return result_json, 200, {'Content-Type': 'application/json'}
     except Exception as e:
         print(f"Error calling Gemini API: {e}")
         return jsonify({'error': 'Failed to generate composition from AI.'}), 500
